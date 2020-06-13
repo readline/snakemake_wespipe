@@ -1,0 +1,32 @@
+samplesheet:
+    samplesheet/samplesheet.tsv
+
+workdir:
+    /PATH/TO/WORKDIR
+    
+
+references:
+    species:  homo_sapiens
+    release:  99
+    build:    hg38
+    fasta:    /data/yuk5/pipeline/wgs_germline/ref/gatk_bundle_hg38_v0/Homo_sapiens_assembly38.fasta
+    bwaidx:   /data/yuk5/pipeline/wgs_germline/ref/gatk_bundle_hg38_v0/Homo_sapiens_assembly38.fasta
+    wesbed:   /data/yuk5/pipeline/wxs_phase1/ref/IDT_xGen_Exome_Research_Panel/hg38/xGen_Exome_Research_Panel.targets.hg38.bed
+    flankbed: /data/yuk5/pipeline/wxs_phase1/ref/IDT_xGen_Exome_Research_Panel/hg38/xGen_Exome_Research_Panel.targets.withflank150.hg38.bed
+    interval: 20
+
+modules:
+    bwa: bwa/0.7.17
+    samtools: samtools/1.9
+    picard: picard/2.17.11
+    sambamba: sambamba
+    samblaster: samblaster
+    gatk: GATK/4.0.8.1
+    vcftools: vcftools
+    ucsc: ucsc
+    bedtools: bedtools
+
+bins:
+    fastp: /data/yuk5/script/fastp
+
+simg:
