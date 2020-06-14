@@ -1,16 +1,11 @@
 from os.path import join
 import pandas as pd
+from scripts.Load import samplesheet
 
+configfile: 'config.yml'
+samplesheetpath: 'samplesheet.tsv'
 
-configfile: 'configs/config.yml'
-samplesheet: 
-
-
-(SAMPLES,) = glob_wildcards('pairedDIR/{sample}_1P.fq.gz')
-PATTERN_R1 = join('pairedDIR', '{sample}_1P.fq.gz')
-PATTERN_R2 = join('pairedDIR', '{sample}_2P.fq.gz')
-
-
+sampledic, libdic, rundic = samplesheet(samplesheetpath)
 
 #sbcmd="sbatch --cpus-per-task={threads} --mem={cluster.mem}"
 #sbcmd+=" --time={cluster.time} --partition={cluster.partition}"
@@ -65,8 +60,8 @@ rule bwa_mem:
     input:
         reads=["01.CleanData/{run}/{run}.R1.cln.fq.gz", "01.CleanData/{run}/{run}.R2.cln.fq.gz"]
     output:
-        runbam=temp("02.Alignment/Level1/{run}/{run}.sort.bam"),
-        runindex=temp("02.Alignment/Level1/{run}/{run}.sort.bam.bai")
+        bam=temp("02.Alignment/Level1/{run}/{run}.sort.bam"),
+        bai=temp("02.Alignment/Level1/{run}/{run}.sort.bam.bai")
     log:
         "logs/bwa_mem.{run}.log"
     params:
@@ -74,100 +69,105 @@ rule bwa_mem:
         para_bwa=' -K 100000000 -v 3 -R "@RG\tID:{run}\tLB:{lib}\tPL:illumina\tPU:{run}\tSM:{sample}" ',
         para_samblaster=""
         para_sambambasort=" --tmpdir /lscratch/$SLURM_JOB_ID "
+    message: "Executing fastq QC with {threads} threads on the following files {input}."
     threads: 16
     resources:
         mem  = 32,
         time = '2-00:00:00'
-        gres = 'lscratch:40'
-    wrapper:
-        "wrapper/bwa_mem"
+        partition = 'norm'
+        out = 'logs/QC.{run}.log'
+        error = 'logs/QC.{run}.err'
+        extra = ' --gres=lscratch:40 '
+    shell:
+        """
+        module load {config[modules][bwa]} {config[modules][samblaster]} {config[modules][sambamba]}
+        bwa mem -t {threads} \
+            {para_bwa} \
+            config[references][bwaidx] \
+            {input.reads} \
+        |samblaster \
+            {params.para_samblaster} \
+        |sambamba view -S -f bam /dev/stdin \
+            -t {threads} \
+        |sambamba sort /dev/stdin \
+            -t {threads} \
+            -o {output.bam} \
+            {params.para_sambambasort}
+        """
         
-rule merge_bam:
+
+rule merge_level3:
     input:
-        ["mapped/A.bam", "mapped/B.bam"]
+        expand("02.Alignment/Level1/{lib}/{lib}.sort.bam", lib=sampledic[{sample}])
+    inputs:
+        " ".join(input)
     output:
-        "merged.bam"
-    params:
-        "" # optional additional parameters as string
-    threads:  8
+        bam="02.Alignment/Level3/{sample}/{sample}.sort.md.bam",
+        bai="02.Alignment/Level3/{sample}/{sample}.sort.md.bam.bai",
+    threads:  4
     resources:
-        mem  = 32,
+        mem  = 16,
         time = '2-00:00:00'
-        gres = 'lscratch:40'
-    wrapper:
-        "0.60.0/bio/samtools/merge"
-
-
-rule samtools_sort:
-    input:
-        "mapped_reads/{sample}.bam"
-    output:
-        "sorted_reads/{sample}.bam"
+        partition = 'norm'
+        out = 'logs/B2.mergelib.{lib}.log'
+        error = 'logs/B2.mergelib.{lib}.err'
+        extra = ' --gres=lscratch:40 '
     shell:
-        "samtools sort -T sorted_reads/{wildcards.sample}"
-        " -O bam {input} > {output}"
-        
-        
-SBT=["wt1","wt2","epcr1","epcr2"]
+        if len(sampledic[{sample}]) > 1:
+            """
+            module load {config[modules][sambamba]}
+            sambamba merge \
+                -t {threads} \
+                {output.bam} \
+                {inputs}
+            sambamba index \
+                -t {threads} \
+                {output.bam}
+            """
+        else:
+            """
+            mv {inputs[0]} {output.bam}
+            sambamba index \
+                -t {threads} \
+                {output.bam}
+            """
 
-rule all:
-    input:
-        expand("02_clean/{nico}_1.paired.fq.gz", nico=SBT),
-        expand("02_clean/{nico}_2.paired.fq.gz", nico=SBT),
-        expand("03_align/{nico}.sam", nico=SBT),
-        expand("04_exp/{nico}_count.txt", nico=SBT),
-        expand("05_ft/{nico}_gene.gtf", nico=SBT),
-        expand("05_ft/{nico}_transcript.gtf", nico=SBT)
 
-rule trim:
+rule bqsr:
     input:
-        "01_raw/{nico}_1.fastq",
-        "01_raw/{nico}_2.fastq"
+        bam="02.Alignment/Level3/{sample}/{sample}.sort.md.bam"
     output:
-        "02_clean/{nico}_1.paired.fq.gz",
-        "02_clean/{nico}_1.unpaired.fq.gz",
-        "02_clean/{nico}_2.paired.fq.gz",
-        "02_clean/{nico}_2.unpaired.fq.gz",
-    threads: 20
+        metrics="02.Alignment/Level3/{sample}/{sample}.BQSR.metrics"
+        bam="02.Alignment/Level3/{sample}/{sample}.BQSR.bam",
+        bai="02.Alignment/Level3/{sample}/{sample}.BQSR.bai",
+    threads:  4
+    resources:
+        mem  = 16,
+        time = '2-00:00:00'
+        partition = 'norm'
+        out = 'logs/B2.mergelib.{lib}.log'
+        error = 'logs/B2.mergelib.{lib}.err'
+        extra = ' --gres=lscratch:40 '
     shell:
-        "java -jar /software/Trimmomatic-0.36/trimmomatic-0.36.jar PE -threads {threads} {input[0]} {input[1]} {output[0]} {output[1]} {output[2]} {output[3]} ILLUMINACLIP:/software/Trimmomatic-0.36/adapters/TruSeq3-PE-2.fa:2:30:10 LEADING:3 TRAILING:3 SLIDINGWINDOW:4:15 MINLEN:36 "
+        """
+        module load {config[modules][gatk]}
+        gatk --java-options "-Xmx12000m -Djava.io.tmpdir=/lscratch/$SLURM_JOB_ID" BaseRecalibrator \
+            -R config[references][fasta] \
+            -I {input.bam} \
+            -O {output.metrics} \
+            --use-original-qualities \
+            --known-sites config[references][gatk_dbsnp] \
+            --known-sites config[references][gatk_1000g] \
+            --known-sites config[references][gatk_indel] \
+            --intervals   config[references][flankbed]
+        gatk --java-options "-Xmx12000m -Djava.io.tmpdir=/lscratch/$SLURM_JOB_ID" ApplyBQSR \
+            --add-output-sam-program-record \
+            -R config[references][fasta] \
+            -I {input.bam} \
+            -O {output.bam} \
+            --use-original-qualities \
+            -bqsr {output.metrics} \
+            -L config[references][flankbed]
+        """            
+            
 
-rule map:
-    input:
-        "02_clean/{nico}_1.paired.fq.gz",
-        "02_clean/{nico}_2.paired.fq.gz"
-    output:
-        "03_align/{nico}.sam"
-    log:
-        "logs/map/{nico}.log"
-    threads: 20
-    shell:
-        "hisat2 -p {threads} --dta -x /root/s/r/p/A_th/WT-Al_VS_WT-CK/index/tair10 -1 {input[0]} -2 {input[1]} -S {output} >{log} 2>&1 "
-        
-rule sort2bam:
-    input:
-        "03_align/{nico}.sam"
-    output:
-        "03_align/{nico}.bam"
-    threads: 8
-    shell:
-        "samtools sort -@ {threads} -m 2G -o {output} {input}"
-
-rule count:
-    input:
-        "03_align/{nico}.bam"
-    output:
-        "04_exp/{nico}_count.txt"
-    threads: 20
-    shell:
-        "featureCounts -T {threads} -p -t exon -g gene_id -a /root/s/r/p/A_th/WT-Al_VS_WT-CK/genome/tair10.gtf -o {output} {input}"
-
-rule fpkm:
-    input:
-        "03_align/{nico}.bam"
-    output:
-        "05_ft/{nico}_gene.gtf",
-        "05_ft/{nico}_transcript.gtf"
-    threads: 20
-    shell:
-        "stringtie -e -p {threads} -G /root/s/r/p/A_th/WT-Al_VS_WT-CK/genome/tair10.gtf -A {output[0]} -o {output[1]} {input}"
