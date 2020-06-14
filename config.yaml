@@ -1,8 +1,8 @@
 samplesheet:
-    samplesheet/samplesheet.tsv
+    samplesheet.tsv
 
 workdir:
-    /PATH/TO/WORKDIR
+    /Users/yuk5/data/pipelines/snakemake_wespipe
     
 
 references:
@@ -11,14 +11,20 @@ references:
     build:    hg38
     fasta:    /data/yuk5/pipeline/wgs_germline/ref/gatk_bundle_hg38_v0/Homo_sapiens_assembly38.fasta
     bwaidx:   /data/yuk5/pipeline/wgs_germline/ref/gatk_bundle_hg38_v0/Homo_sapiens_assembly38.fasta
+    fadict:   /data/yuk5/pipeline/wgs_germline/ref/gatk_bundle_hg38_v0/Homo_sapiens_assembly38.fasta.dict
+    itvlist:  /data/yuk5/pipeline/wgs_germline/ref/gatk_bundle_hg38_v0/wgs_evaluation_regions.hg38.interval_list
     wesbed:   /data/yuk5/pipeline/wxs_phase1/ref/IDT_xGen_Exome_Research_Panel/hg38/xGen_Exome_Research_Panel.targets.hg38.bed
     flankbed: /data/yuk5/pipeline/wxs_phase1/ref/IDT_xGen_Exome_Research_Panel/hg38/xGen_Exome_Research_Panel.targets.withflank150.hg38.bed
     interval: 20
     
-    gatk_dbsnp: /data/yuk5/pipeline/wgs_germline/ref/Homo_sapiens_assembly38.dbsnp138.vcf.gz
-    gatk_1000g: /data/yuk5/pipeline/wgs_germline/ref/Mills_and_1000G_gold_standard.indels.hg38.vcf.gz
-    gatk_indel: /data/yuk5/pipeline/wgs_germline/ref/Homo_sapiens_assembly38.known_indels.vcf.gz
-
+    gatk_dbsnp:  /data/yuk5/pipeline/wgs_germline/ref/Homo_sapiens_assembly38.dbsnp138.vcf.gz
+    gatk_1000g:  /data/yuk5/pipeline/wgs_germline/ref/Mills_and_1000G_gold_standard.indels.hg38.vcf.gz
+    gatk_indel:  /data/yuk5/pipeline/wgs_germline/ref/Homo_sapiens_assembly38.known_indels.vcf.gz
+    gatk_axiom:  /data/yuk5/pipeline/wgs_germline/ref/gatk_bundle_hg38_v0/Axiom_Exome_Plus.genotypes.all_populations.poly.hg38.vcf.gz
+    gatk_hapmap: /data/yuk5/pipeline/wgs_germline/ref/gatk_bundle_hg38_v0/hapmap_3.3.hg38.vcf.gz
+    gatk_omni:   /data/yuk5/pipeline/wgs_germline/ref/gatk_bundle_hg38_v0/1000G_omni2.5.hg38.vcf.gz
+    gatk_1000hc: /data/yuk5/pipeline/wgs_germline/ref/gatk_bundle_hg38_v0/1000G_phase1.snps.high_confidence.hg38.vcf.gz
+    
 modules:
     bwa: bwa/0.7.17
     samtools: samtools/1.9
@@ -32,12 +38,5 @@ modules:
 
 bins:
     fastp: /data/yuk5/script/fastp
-
+    vcfanno: /data/yuk5/pipeline/vcf_annotation/vcf_annotation.v1.wxs.py
 simg:
-
-para:
-    bwa:
-        index: references.bwaidx
-        para_bwa: ' -K 100000000 -v 3 -R "@RG\tID:{run}\tLB:{lib}\tPL:illumina\tPU:{run}\tSM:{sample}" ',
-        para_samblaster: ""
-        para_sambambasort: " --tmpdir /lscratch/$SLURM_JOB_ID "
