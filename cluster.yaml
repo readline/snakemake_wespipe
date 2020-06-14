@@ -1,0 +1,35 @@
+__default__:
+    partition: norm
+    time: 10
+    extra: "--gres=lscratch:20"
+QC:
+    time: '2-00:00:00'
+    partition: 'norm'
+    out: 'logs/QC.{run}.log'
+    error: 'logs/QC.{run}.err'
+    extra: ' --gres=lscratch:40 '
+bwa_mem:
+    time: '2-00:00:00'
+    partition: 'norm'
+    out: 'logs/QC.{run}.log'
+    error: 'logs/QC.{run}.err'
+    extra: ' --gres=lscratch:40 '
+markdup:
+    time: '2-00:00:00'
+    partition: 'norm'
+    out: 'logs/B2.mergelib.{lib}.log'
+    error: 'logs/B2.mergelib.{lib}.err'
+    extra: ' --gres=lscratch:40 '
+merge_level3:
+    mem: 16,
+    time: '2-00:00:00'
+    partition: 'norm'
+    out: 'logs/B2.mergelib.{lib}.log'
+    error: 'logs/B2.mergelib.{lib}.err'
+    extra: ' --gres=lscratch:40 '
+BQSR:
+    time: '2-00:00:00',
+    partition: 'norm',
+    out: 'logs/B2.mergelib.{lib}.log'
+    error: 'logs/B2.mergelib.{lib}.err'
+    extra: ' --gres=lscratch:40 '
