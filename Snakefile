@@ -1,8 +1,9 @@
 from os.path import join
 import pandas as pd
 
-GENOME = 'genome/HWB.chromosome.fa'
-GTF = 'genes/HWB.gene.models.gtf'
+
+configfile: 'configs/config.yml'
+samplesheet: 
 
 
 (SAMPLES,) = glob_wildcards('pairedDIR/{sample}_1P.fq.gz')
@@ -38,11 +39,15 @@ rule QC:
         reads2out="01.CleanData/{run}/{run}.R2.cln.fq.gz",
         htmlout="01.CleanData/{run}/{run}.QC.html",
         jsonout="01.CleanData/{run}/{run}.QC.json"
-    log: "logs/QC.{run}.log"
+    log: "logs/QC.{run}.snakelog"
     threads: 8
-    resources:
+    cluster:
         mem  = 16,
         time = '2-00:00:00'
+        partition = 'norm'
+        out = 'logs/QC.{run}.log'
+        error = 'logs/QC.{run}.err'
+        extra = ' --gres=lscratch:40 '
     message: "Executing fastq QC with {threads} threads on the following files {input}."
     shell:
         """
