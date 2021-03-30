@@ -3,3 +3,4 @@
 */__pycache__/
 00.RawData/
 .snakemake/
+test
