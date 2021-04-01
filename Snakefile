@@ -108,9 +108,10 @@ rule markdup:
     log:
         out = "logs/B2.mkdup/{lib}.o",
         err = "logs/B2.mkdup/{lib}.e",
-    threads:  4
+    threads:  16
     resources:
-        mem = '16g',
+        mem = '64g',
+        jvm = '60g',
         extra = ' --gres=lscratch:40 ',
     run:
         #inputs = " ".join(["INPUT={}".format(f) for f in {input}]),
@@ -118,7 +119,7 @@ rule markdup:
         shell(
             """
             module load {config[modules][picard]} {config[modules][sambamba]}
-            java -Xmx{resources.mem}  -Djava.io.tmpdir=/lscratch/$SLURM_JOB_ID  -jar $PICARD_JAR MarkDuplicates \
+            java -Xmx{resources.jvm}  -Djava.io.tmpdir=/lscratch/$SLURM_JOB_ID  -jar $PICARD_JAR MarkDuplicates \
                 {inputs} \
                 OUTPUT={output.bam} \
                 METRICS_FILE={output.metrics} \
@@ -157,7 +158,8 @@ rule merge_level3:
             """)
         else:
             shell("""
-            mv {snakemake.input[0]} {output.bam}
+            module load {config[modules][sambamba]}
+            mv {input.bam[0]} {output.bam}
             sambamba index \
                 -t {threads} \
                 {output.bam} 2>> {log.err}
@@ -194,14 +196,14 @@ rule bqsr:
     log:
         out = "logs/B5.BQSR/{sample}.o",
         err = "logs/B5.BQSR/{sample}.e",
-    threads:  4
+    threads:  2
     resources:
         mem  = '16g',
         extra = ' --gres=lscratch:40 ',
     shell:
         """
         module load {config[modules][gatk]}
-        gatk --java-options "-Xmx{resources.mem} -Djava.io.tmpdir=/lscratch/$SLURM_JOB_ID" BaseRecalibrator \
+        gatk --java-options "-Xmx14g -Djava.io.tmpdir=/lscratch/$SLURM_JOB_ID" BaseRecalibrator \
             -R {config[references][fasta]} \
             -I {input.bam} \
             -O {output.metrics} \
@@ -210,7 +212,7 @@ rule bqsr:
             --known-sites {config[references][gatk_1000g]} \
             --known-sites {config[references][gatk_indel]} \
             --intervals   {config[references][flankbed]} >> {log.out} 2>> {log.err}
-        gatk --java-options "-Xmx12000m -Djava.io.tmpdir=/lscratch/$SLURM_JOB_ID" ApplyBQSR \
+        gatk --java-options "-Xmx14g -Djava.io.tmpdir=/lscratch/$SLURM_JOB_ID" ApplyBQSR \
             --add-output-sam-program-record \
             -R {config[references][fasta]} \
             -I {input.bam} \
