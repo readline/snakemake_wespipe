@@ -1,7 +1,10 @@
 from os.path import join
+import os
 import pandas as pd
 from scripts.Load import samplesheet
 
+snakedir = os.getcwd()
+print(snakedir)
 configfile: 'config.yaml'
 print(config)
 sampledic, libdic, rundic = samplesheet(config['samplesheet'])
@@ -45,8 +48,8 @@ rule QC:
         htmlout="01.CleanData/{run}/{run}.QC.html",
         jsonout="01.CleanData/{run}/{run}.QC.json"
     log: 
-        out = "logs/A1.QC/{run}.o",
-        err = "logs/A1.QC/{run}.e"
+        out = snakedir + "/logs/A1.QC/{run}.o",
+        err = snakedir + "/logs/A1.QC/{run}.e"
     threads: 8
     resources: 
         mem = '16g',
@@ -71,8 +74,8 @@ rule bwa_mem:
         bam=temp("02.Alignment/Level1/{run}/{run}.sort.bam"),
         bai=temp("02.Alignment/Level1/{run}/{run}.sort.bam.bai"),
     log:
-        out = "logs/B1.bwa/{run}.o",
-        err = "logs/B1.bwa/{run}.e"
+        out = snakedir+"/logs/B1.bwa/{run}.o",
+        err = snakedir+"/logs/B1.bwa/{run}.e"
     params:
         bwa=lambda wildcards:' -K 100000000 -v 3 -R "@RG\\tID:{}\\tLB:{}\\tPL:illumina\\tPU:{}\\tSM:{}" '.format(
                                 wildcards.run,  rundic[wildcards.run]['Lib'],  wildcards.run,  rundic[wildcards.run]['Sample']),
@@ -106,8 +109,8 @@ rule markdup:
         bai    =temp("02.Alignment/Level2/{lib}/{lib}.sort.md.bam.bai"),
         metrics=temp("02.Alignment/Level2/{lib}/{lib}.sort.md.metrics"),
     log:
-        out = "logs/B2.mkdup/{lib}.o",
-        err = "logs/B2.mkdup/{lib}.e",
+        out = snakedir+"/logs/B2.mkdup/{lib}.o",
+        err = snakedir+"/logs/B2.mkdup/{lib}.e",
     threads:  16
     resources:
         mem = '64g',
@@ -140,8 +143,8 @@ rule merge_level3:
         bam=temp("02.Alignment/Level3/{sample}/{sample}.sort.md.bam"),
         bai=temp("02.Alignment/Level3/{sample}/{sample}.sort.md.bam.bai"),
     log:
-        out = "logs/B3.merge_level3/{sample}.o",
-        err = "logs/B3.merge_level3/{sample}.e",
+        out = snakedir+"/logs/B3.merge_level3/{sample}.o",
+        err = snakedir+"/logs/B3.merge_level3/{sample}.e",
     threads:  8
     resources:
         mem = '16g',
@@ -172,8 +175,8 @@ rule chrMbam:
     output:
         mbam="02.Alignment/chrM/{sample}/{sample}.bam",
     log:
-        out = "logs/B4.chrMbam/{sample}.o",
-        err = "logs/B4.chrMbam/{sample}.e",
+        out = snakedir+"/logs/B4.chrMbam/{sample}.o",
+        err = snakedir+"/logs/B4.chrMbam/{sample}.e",
     threads:  8
     resources:
         mem = '16g',
@@ -194,8 +197,8 @@ rule bqsr:
         bam="02.Alignment/Level3/{sample}/{sample}.BQSR.bam",
         bai="02.Alignment/Level3/{sample}/{sample}.BQSR.bai",
     log:
-        out = "logs/B5.BQSR/{sample}.o",
-        err = "logs/B5.BQSR/{sample}.e",
+        out = snakedir+"/logs/B5.BQSR/{sample}.o",
+        err = snakedir+"/logs/B5.BQSR/{sample}.e",
     threads:  2
     resources:
         mem  = '16g',
@@ -234,8 +237,8 @@ rule stat_bqsr:
         statdir=directory("02.Alignment/Level3/{sample}/stat"),
         flags="02.Alignment/Level3/{sample}/{sample}.BQSR.bam.flagstat",
     log:
-        out = "logs/B6.BQSRstat/{sample}.o",
-        err = "logs/B6.BQSRstat/{sample}.e",
+        out = snakedir+"/logs/B6.BQSRstat/{sample}.o",
+        err = snakedir+"/logs/B6.BQSRstat/{sample}.e",
     threads:  4
     resources:
         mem  = '16g',
@@ -270,7 +273,7 @@ rule stat_bqsr:
             METRIC_ACCUMULATION_LEVEL="READ_GROUP"  >> {log.out} 2>> {log.err}
         sambamba flagstat -t {threads} {input.bam} > {output.flags}
         module load {config[modules][python37]} 
-        ./scripts/ExomeBamCovStat.py hg38idt \
+        {snakedir}/scripts/ExomeBamCovStat.py hg38idt \
             {input.bam} {params.stat3} >> {log.out} 2>> {log.err}
         """        
         
@@ -281,8 +284,8 @@ rule lofreqindelbam:
         bam=temp("02.Alignment/Lofreq/{sample}/{sample}.li.bam"),
         bai=temp("02.Alignment/Lofreq/{sample}/{sample}.li.bam.bai"),
     log:
-        out = "logs/B7.lofreqindelbam/{sample}.o",
-        err = "logs/B7.lofreqindelbam/{sample}.e",
+        out = snakedir+"/logs/B7.lofreqindelbam/{sample}.o",
+        err = snakedir+"/logs/B7.lofreqindelbam/{sample}.e",
     threads:  4
     resources:
         mem  = '16g',
@@ -305,8 +308,8 @@ rule CallableLoci:
         bed="02.Alignment/Callable/{sample}/{sample}.bed",
         summary="02.Alignment/Callable/{sample}/{sample}.summary",
     log:
-        out = "logs/B8.Callable/{sample}.o",
-        err = "logs/B8.Callable/{sample}.e",
+        out = snakedir+"/logs/B8.Callable/{sample}.o",
+        err = snakedir+"/logs/B8.Callable/{sample}.e",
     threads:  4
     resources:
         mem  = '16g',
@@ -336,8 +339,8 @@ rule HaplotypeCaller:
         stat="03.Germline/{sample}/stat/{sample}.germline"
     threads:  8
     log:
-        out = "logs/C1.HCaller/{sample}.o",
-        err = "logs/C1.HCaller/{sample}.e",
+        out = snakedir+"/logs/C1.HCaller/{sample}.o",
+        err = snakedir+"/logs/C1.HCaller/{sample}.e",
     resources:
         mem  = '32g',
         extra = ' --gres=lscratch:40 ',
@@ -382,8 +385,8 @@ rule GenomicsDBImport:
         itvmf=temp("03.Germline/VQSR/Merge.itv_{itv}.mf.vcf.gz"),
         itvso="03.Germline/VQSR/Merge.itv_{itv}.siteonly.vcf.gz"
     log:
-        out = "logs/C2.GDBimport/{itv}.o",
-        err = "logs/C2.GDBimport/{itv}.e",
+        out = snakedir+"/logs/C2.GDBimport/{itv}.o",
+        err = snakedir+"/logs/C2.GDBimport/{itv}.e",
     threads:  4
     resources:
         mem  = '16g',
@@ -444,8 +447,8 @@ rule genotyping:
         mirv = "03.Germline/VQSR/tmp.indel.recalibrated.vcf",
         vqsr="03.Germline/Merge.flt.vqsr.vcf.gz",
     log:
-        out = "logs/C3.Genotype/Genotype.o",
-        err = "logs/C3.Genotype/Genotype.e",
+        out = snakedir+"/logs/C3.Genotype/Genotype.o",
+        err = snakedir+"/logs/C3.Genotype/Genotype.e",
     threads:  8
     resources:
         mem  = '64g',
@@ -554,8 +557,8 @@ rule lofreq:
         vgz="03.Germline.Lofreq/{sample}/{sample}.lofreq.vcf.gz",
         tbi="03.Germline.Lofreq/{sample}/{sample}.lofreq.vcf.gz.tbi",
     log:
-        out = "logs/C05.lofreq/{sample}.o",
-        err = "logs/C05.lofreq/{sample}.e",
+        out = snakedir+"/logs/C05.lofreq/{sample}.o",
+        err = snakedir+"/logs/C05.lofreq/{sample}.e",
     threads:  16
     resources:
         mem  = '32g',
@@ -582,8 +585,8 @@ rule mtoolbox:
         path=directory("03.Germline.chrM/{sample}"),
         vcf="03.Germline.chrM/{sample}/{sample}.vcf",
     log:
-        out = "logs/C6.mtoolbox/{sample}.o",
-        err = "logs/C6.mtoolbox/{sample}.e",
+        out = snakedir+"/logs/C6.mtoolbox/{sample}.o",
+        err = snakedir+"/logs/C6.mtoolbox/{sample}.e",
     threads:  4
     resources:
         mem  = '32g',
@@ -597,7 +600,7 @@ rule mtoolbox:
         conda activate mtoolbox >> {log.out} 2>> {log.err}
         source /home/yuk5/yuk5/app/anaconda3/envs/mtoolbox/MToolBox-1.2.1/setenv.sh >> {log.out} 2>> {log.err}
         set -eu
-        ./scripts/write_mtoolbox_config.py {input.bam} {output.path} {wildcards.sample} > {output.config} 2>> {log.err}
+        {snakedir}/scripts/write_mtoolbox_config.py {input.bam} {output.path} {wildcards.sample} > {output.config} 2>> {log.err}
         which python
         MToolBox.sh -i {output.config} >> {log.out} 2>> {log.err}
         """
@@ -608,8 +611,8 @@ rule freebayes:
     output:
         vgz="03.Germline.freebayes/{sample}/{sample}.vcf.gz",
     log:
-        out = "logs/C7.freebayes/{sample}.o",
-        err = "logs/C7.freebayes/{sample}.e",
+        out = snakedir+"/logs/C7.freebayes/{sample}.o",
+        err = snakedir+"/logs/C7.freebayes/{sample}.e",
     threads:  16
     resources:
         mem  = '64g',
@@ -635,8 +638,8 @@ rule anno_gatk:
         folder=directory("03.Germline/Merge.flt.vqsr.vcf.anno"),
         result="03.Germline/Merge.flt.vqsr.vcf.anno/Merge.Anno.matrix.gz"
     log:
-        out = "logs/D1.anno_gatk/Anno_GATK.o",
-        err = "logs/D1.anno_gatk/Anno_GATK.e",
+        out = snakedir+"/logs/D1.anno_gatk/Anno_GATK.o",
+        err = snakedir+"/logs/D1.anno_gatk/Anno_GATK.e",
     threads:  24
     resources:
         mem  = '48g',
@@ -656,8 +659,8 @@ rule anno_lofreq:
         folder=directory("03.Germline.Lofreq/{sample}/{sample}.lofreq.vcf.gz.anno"),
         result="03.Germline.Lofreq/{sample}/{sample}.lofreq.vcf.gz.anno/Merge.Anno.matrix.gz"
     log:
-        out = "logs/D2.anno_lofreq/{sample}.o",
-        err = "logs/D2.anno_lofreq/{sample}.e",
+        out = snakedir+"/logs/D2.anno_lofreq/{sample}.o",
+        err = snakedir+"/logs/D2.anno_lofreq/{sample}.e",
     threads:  16
     resources:
         mem  = '64g',
@@ -677,8 +680,8 @@ rule anno_freebayes:
         folder=directory("03.Germline.freebayes/{sample}/{sample}.vcf.gz.anno"),
         result="03.Germline.freebayes/{sample}/{sample}.vcf.gz.anno/Merge.Anno.matrix.gz",
     log:
-        out = "logs/D3.anno_freebayes/{sample}.o",
-        err = "logs/D3.anno_freebayes/{sample}.e",
+        out = snakedir+"/logs/D3.anno_freebayes/{sample}.o",
+        err = snakedir+"/logs/D3.anno_freebayes/{sample}.e",
     threads:  16
     resources:
         mem  = '64g',
