@@ -35,8 +35,9 @@ rule all:
         lambda wildcards: ["02.Alignment/Level3/{}/{}.BQSR.bam.flagstat".format(sample, sample) for sample in sampledic],
         lambda wildcards: ["02.Alignment/Callable/{}/{}.bed".format(sample, sample) for sample in sampledic],
         lambda wildcards: ["03.Germline.Lofreq/{}/{}.lofreq.vcf.gz.anno/Merge.Anno.matrix.gz".format(sample, sample) for sample in sampledic],
-        lambda wildcards: ["03.Germline.freebayes/{}/{}.vcf.gz.anno/Merge.Anno.matrix.gz".format(sample, sample) for sample in sampledic],
+        lambda wildcards: ["03.Germline.freebayes/{}/{}.flt.vcf.gz.anno/Merge.Anno.matrix.gz".format(sample, sample) for sample in sampledic],
         lambda wildcards: ["03.Germline.chrM/{}/{}.vcf".format(sample, sample) for sample in sampledic],
+        lambda wildcards: ["05.MEI_scramble/{}/{}.mei.txt".format(sample, sample) for sample in sampledic],
 
 rule QC:
     input:
@@ -629,7 +630,44 @@ rule freebayes:
         bgzip > {output.vgz}
         tabix -p vcf {output.vgz}
         """
+
         
+        
+rule scramble:
+    input:
+        bam="02.Alignment/Level3/{sample}/{sample}.BQSR.bam",
+    output:
+        clst="05.MEI_scramble/{sample}/{sample}.cluster.txt"
+        mei="05.MEI_scramble/{sample}/{sample}.mei.txt",
+    log:
+        out = snakedir+"/logs/C9.scramble/{sample}.o",
+        err = snakedir+"/logs/C9.scramble/{sample}.e",
+    threads:  4
+    resources:
+        mem  = '32g',
+        extra = ' --gres=lscratch:10 ',
+    shell:
+        """module load {config[modules][scramble]} \
+singularity exec -e \
+  -B /gpfs,/gs9,/data,/home \
+  {config[simg][scramble]} \
+  cluster_identifier \
+  {input.bam} \
+  > {output.clst}
+singularity exec -e \
+  -B /gpfs,/gs9,/data,/home \
+  {config[simg][scramble]} \
+  Rscript \
+    --vanilla /app/cluster_analysis/bin/SCRAMble.R \
+    --out-name {output.mei} \
+    --cluster-file {output.clst} \
+    --install-dir /app/cluster_analysis/bin \
+    --mei-refs /app/cluster_analysis/resources/MEI_consensus_seqs.fa \
+    --ref {config[references][scramblefa]} \
+    --eval-dels \
+    --eval-meis \
+    --no-vcf
+        """
             
 rule anno_gatk:
     input:
@@ -677,19 +715,24 @@ rule anno_freebayes:
     input:
         "03.Germline.freebayes/{sample}/{sample}.vcf.gz",
     output:
-        folder=directory("03.Germline.freebayes/{sample}/{sample}.vcf.gz.anno"),
-        result="03.Germline.freebayes/{sample}/{sample}.vcf.gz.anno/Merge.Anno.matrix.gz",
+        fltvcf="03.Germline.freebayes/{sample}/{sample}.flt.vcf.gz",
+        folder=directory("03.Germline.freebayes/{sample}/{sample}.flt.vcf.gz.anno"),
+        result="03.Germline.freebayes/{sample}/{sample}.flt.vcf.gz.anno/Merge.Anno.matrix.gz",
     log:
-        out = snakedir+"/logs/D3.anno_freebayes/{sample}.o",
-        err = snakedir+"/logs/D3.anno_freebayes/{sample}.e",
+        out = "logs/D3.anno_freebayes/{sample}.o",
+        err = "logs/D3.anno_freebayes/{sample}.e",
     threads:  16
     resources:
         mem  = '64g',
         extra = ' --gres=lscratch:10 ',
     shell:
         """
+        module load {config[modules][vcflib]} {config[modules][samtools]}
+        vcffilter \
+          -f "QUAL > 20 & DP > 8 & QUAL / AO > 10 & SAF > 0 & SAR > 0 & RPR > 1 & RPL > 1" \
+            {input}|bgzip > {output.fltvcf}
         {config[bins][vcfanno]} \
-            {input} \
+            {output.fltvcf} \
             {output.folder} \
             {threads} n 
         """

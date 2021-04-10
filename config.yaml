@@ -2,7 +2,7 @@ samplesheet:
     samplesheet.tsv
 
 workdir:
-    /data/yuk5/project/1.FPDMM/01.WES/Batch_000000
+    /data/yuk5/project/1.FPDMM/01.WES/Pipe_210329
 
 references:
     species:  homo_sapiens
@@ -23,6 +23,7 @@ references:
     gatk_hapmap: /data/yuk5/pipeline/wgs_germline/ref/gatk_bundle_hg38_v0/hapmap_3.3.hg38.vcf.gz
     gatk_omni:   /data/yuk5/pipeline/wgs_germline/ref/gatk_bundle_hg38_v0/1000G_omni2.5.hg38.vcf.gz
     gatk_1000hc: /data/yuk5/pipeline/wgs_germline/ref/gatk_bundle_hg38_v0/1000G_phase1.snps.high_confidence.hg38.vcf.gz
+    scramblefa: /data/yuk5/pipeline/wgs_germline/ref/SCRAMBLE/Homo_sapiens_assembly38.fasta
 modules:
     bwa: bwa/0.7.17
     samtools: samtools/1.9
@@ -37,10 +38,14 @@ modules:
     python27: python/2.7
     python37: python/3.7
     freebayes: freebayes/1.3.5
+    vcflib: vcflib/1.0.1
+    cnvkit: cnvkit/0.9.8
+    scramble: Scramble/1.0.1
 bins:
     fastp: /data/yuk5/script/fastp
     vcfanno: /data/yuk5/pipeline/vcf_annotation/vcf_annotation.v1.wxs.py
 simg:
+    scramble: /usr/local/apps/Scramble/1.0.1-32893ef/libexec/scramble-1.0.1-32893ef.sif
 max-jobs-per-second: 1
 latency-wait: 120
 keep-going: true
