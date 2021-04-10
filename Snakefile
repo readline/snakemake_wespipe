@@ -637,7 +637,7 @@ rule scramble:
     input:
         bam="02.Alignment/Level3/{sample}/{sample}.BQSR.bam",
     output:
-        clst="05.MEI_scramble/{sample}/{sample}.cluster.txt"
+        clst="05.MEI_scramble/{sample}/{sample}.cluster.txt",
         mei="05.MEI_scramble/{sample}/{sample}.mei.txt",
     log:
         out = snakedir+"/logs/C9.scramble/{sample}.o",
