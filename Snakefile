@@ -37,7 +37,7 @@ rule all:
         lambda wildcards: ["03.Germline.Lofreq/{}/{}.lofreq.vcf.gz.anno/Merge.Anno.matrix.gz".format(sample, sample) for sample in sampledic],
         lambda wildcards: ["03.Germline.freebayes/{}/{}.flt.vcf.gz.anno/Merge.Anno.matrix.gz".format(sample, sample) for sample in sampledic],
         lambda wildcards: ["03.Germline.chrM/{}/{}.vcf".format(sample, sample) for sample in sampledic],
-        lambda wildcards: ["05.MEI_scramble/{}/{}.mei.txt".format(sample, sample) for sample in sampledic],
+        lambda wildcards: ["05.MEI_scramble/{}/{}.cluster.txt".format(sample, sample) for sample in sampledic],
 
 rule QC:
     input:
@@ -282,8 +282,8 @@ rule lofreqindelbam:
     input:
         bam="02.Alignment/Level3/{sample}/{sample}.BQSR.bam",
     output:
-        bam=temp("02.Alignment/Lofreq/{sample}/{sample}.li.bam"),
-        bai=temp("02.Alignment/Lofreq/{sample}/{sample}.li.bam.bai"),
+        bam="02.Alignment/Lofreq/{sample}/{sample}.li.bam",
+        bai="02.Alignment/Lofreq/{sample}/{sample}.li.bam.bai",
     log:
         out = snakedir+"/logs/B7.lofreqindelbam/{sample}.o",
         err = snakedir+"/logs/B7.lofreqindelbam/{sample}.e",
@@ -638,7 +638,8 @@ rule scramble:
         bam="02.Alignment/Level3/{sample}/{sample}.BQSR.bam",
     output:
         clst="05.MEI_scramble/{sample}/{sample}.cluster.txt",
-        mei="05.MEI_scramble/{sample}/{sample}.mei.txt",
+    params:
+        mei="05.MEI_scramble/{sample}/{sample}",
     log:
         out = snakedir+"/logs/C9.scramble/{sample}.o",
         err = snakedir+"/logs/C9.scramble/{sample}.e",
@@ -647,26 +648,24 @@ rule scramble:
         mem  = '32g',
         extra = ' --gres=lscratch:10 ',
     shell:
-        """module load {config[modules][scramble]} \
+        """module load {config[modules][scramble]} 
 singularity exec -e \
   -B /gpfs,/gs9,/data,/home \
   {config[simg][scramble]} \
   cluster_identifier \
   {input.bam} \
-  > {output.clst}
+  > {output.clst} 2>{log.err}
 singularity exec -e \
   -B /gpfs,/gs9,/data,/home \
   {config[simg][scramble]} \
   Rscript \
-    --vanilla /app/cluster_analysis/bin/SCRAMble.R \
-    --out-name {output.mei} \
-    --cluster-file {output.clst} \
-    --install-dir /app/cluster_analysis/bin \
+    --vanilla /data/yuk5/pipeline/wgs_germline/ref/SCRAMBLE/v1.0.1_fixedbin/SCRAMble.R \
+    --out-name {config[workdir]}/{params.mei} \
+    --cluster-file {config[workdir]}/{output.clst} \
+    --install-dir /data/yuk5/pipeline/wgs_germline/ref/SCRAMBLE/v1.0.1_fixedbin \
     --mei-refs /app/cluster_analysis/resources/MEI_consensus_seqs.fa \
     --ref {config[references][scramblefa]} \
-    --eval-dels \
-    --eval-meis \
-    --no-vcf
+    --eval-meis > {log.out} 2>{log.err}
         """
             
 rule anno_gatk:
