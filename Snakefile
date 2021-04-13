@@ -37,6 +37,8 @@ rule all:
         lambda wildcards: ["03.Germline.Lofreq/{}/{}.lofreq.vcf.gz.anno/Merge.Anno.matrix.gz".format(sample, sample) for sample in sampledic],
         lambda wildcards: ["03.Germline.freebayes/{}/{}.flt.vcf.gz.anno/Merge.Anno.matrix.gz".format(sample, sample) for sample in sampledic],
         lambda wildcards: ["03.Germline.chrM/{}/{}.vcf".format(sample, sample) for sample in sampledic],
+        lambda wildcards: ["03.Germline.strelka/{}/results/variants/variants.vcf.gz".format(sample) for sample in sampledic],
+        
         lambda wildcards: ["05.MEI_scramble/{}/{}.cluster.txt".format(sample, sample) for sample in sampledic],
 
 rule QC:
@@ -631,6 +633,55 @@ rule freebayes:
         tabix -p vcf {output.vgz}
         """
 
+rule manta:
+    input:
+        bam="02.Alignment/Level3/{sample}/{sample}.BQSR.bam",
+    output:
+        folder="04.SV.manta/{sample}",
+        result="04.SV.manta/{sample}/results/variants/candidateSmallIndels.vcf.gz",
+    log:
+        out = snakedir+"/logs/C11.manta/{sample}.o",
+        err = snakedir+"/logs/C11.manta/{sample}.e",
+    threads:  16
+    resources:
+        mem  = '32g',
+        extra = ' --gres=lscratch:50 ',
+    shell:
+        '''module load {config[modules][manta]}
+        configManta.py \
+            --bam {input.bam} \
+            --referenceFasta {config[references][fasta]} \
+            --runDir {output.folder} \
+            --callRegions {config[references][flankbedgz]} > {log.out} 2> {log.err}
+        {output.folder}/runWorkflow.py -m local -j 16 >> {log.out} 2>> {log.err}
+        '''
+        
+        
+rule strelka:
+    input:
+        bam="02.Alignment/Level3/{sample}/{sample}.BQSR.bam",
+        manta="04.SV.manta/{sample}/results/variants/candidateSmallIndels.vcf.gz",
+    output:
+        folder="03.Germline.strelka/{sample}",
+        result="03.Germline.strelka/{sample}/results/variants/variants.vcf.gz",
+    log:
+        out = snakedir+"/logs/C12.strelka/{sample}.o",
+        err = snakedir+"/logs/C12.strelka/{sample}.e",
+    threads:  16
+    resources:
+        mem  = '32g',
+        extra = ' --gres=lscratch:20 ',
+    shell:
+        '''module load {config[modules][strelka]}
+        configManta.py \
+            --bam {input.bam} \
+            --referenceFasta {config[references][fasta]} \
+            --runDir {output.folder} \
+            --callRegions {config[references][flankbedgz]} \
+            --indelCandidates {input.manta} \
+            --exome > {log.out} 2> {log.err}
+        {output.folder}/runWorkflow.py -m local -j 16 >> {log.out} 2>> {log.err}
+        '''
         
         
 rule scramble:
@@ -649,25 +700,26 @@ rule scramble:
         extra = ' --gres=lscratch:10 ',
     shell:
         """module load {config[modules][scramble]} 
-singularity exec -e \
-  -B /gpfs,/gs9,/data,/home \
-  {config[simg][scramble]} \
-  cluster_identifier \
-  {input.bam} \
-  > {output.clst} 2>{log.err}
-singularity exec -e \
-  -B /gpfs,/gs9,/data,/home \
-  {config[simg][scramble]} \
-  Rscript \
-    --vanilla /data/yuk5/pipeline/wgs_germline/ref/SCRAMBLE/v1.0.1_fixedbin/SCRAMble.R \
-    --out-name {config[workdir]}/{params.mei} \
-    --cluster-file {config[workdir]}/{output.clst} \
-    --install-dir /data/yuk5/pipeline/wgs_germline/ref/SCRAMBLE/v1.0.1_fixedbin \
-    --mei-refs /app/cluster_analysis/resources/MEI_consensus_seqs.fa \
-    --ref {config[references][scramblefa]} \
-    --eval-meis > {log.out} 2>{log.err}
+        singularity exec -e \
+          -B /gpfs,/gs9,/data,/home \
+          {config[simg][scramble]} \
+          cluster_identifier \
+          {input.bam} \
+          > {output.clst} 2>{log.err}
+        singularity exec -e \
+          -B /gpfs,/gs9,/data,/home \
+          {config[simg][scramble]} \
+          Rscript \
+            --vanilla /data/yuk5/pipeline/wgs_germline/ref/SCRAMBLE/v1.0.1_fixedbin/SCRAMble.R \
+            --out-name {config[workdir]}/{params.mei} \
+            --cluster-file {config[workdir]}/{output.clst} \
+            --install-dir /data/yuk5/pipeline/wgs_germline/ref/SCRAMBLE/v1.0.1_fixedbin \
+            --mei-refs /app/cluster_analysis/resources/MEI_consensus_seqs.fa \
+            --ref {config[references][scramblefa]} \
+            --eval-meis >> {log.out} 2>>{log.err}
         """
-            
+        
+
 rule anno_gatk:
     input:
         "03.Germline/Merge.flt.vqsr.vcf.gz",
@@ -686,7 +738,7 @@ rule anno_gatk:
         {config[bins][vcfanno]} \
             {input} \
             {output.folder} \
-            {threads} n 
+            {threads} n > {log.out} 2> {log.err}
         """
 
 rule anno_lofreq:
@@ -707,7 +759,7 @@ rule anno_lofreq:
         {config[bins][vcfanno]} \
             {input} \
             {output.folder} \
-            {threads} n 
+            {threads} n > {log.out} 2> {log.err}
         """
         
 rule anno_freebayes:
@@ -733,7 +785,11 @@ rule anno_freebayes:
         {config[bins][vcfanno]} \
             {output.fltvcf} \
             {output.folder} \
-            {threads} n 
+            {threads} n > {log.out} 2> {log.err}
         """
         
         
+
+
+
+

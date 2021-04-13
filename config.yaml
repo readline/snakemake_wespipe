@@ -14,6 +14,7 @@ references:
     itvlist:  /data/yuk5/pipeline/wgs_germline/ref/gatk_bundle_hg38_v0/wgs_evaluation_regions.hg38.interval_list
     wesbed:   /data/yuk5/pipeline/wxs_phase1/ref/IDT_xGen_Exome_Research_Panel/hg38/xGen_Exome_Research_Panel.targets.hg38.bed
     flankbed: /data/yuk5/pipeline/wxs_phase1/ref/IDT_xGen_Exome_Research_Panel/hg38/xGen_Exome_Research_Panel.targets.withflank150.hg38.bed
+    flankbedgz: /data/yuk5/pipeline/wxs_phase1/ref/IDT_xGen_Exome_Research_Panel/hg38/xGen_Exome_Research_Panel.targets.withflank150.hg38.bed.gz
     flankitv: /data/yuk5/pipeline/wxs_phase1/ref/IDT_xGen_Exome_Research_Panel/hg38/xGen_Exome_Research_Panel.targets.withflank150.hg38.bed.intervals
     interval: 17
     gatk_dbsnp:  /data/yuk5/pipeline/wgs_germline/ref/Homo_sapiens_assembly38.dbsnp138.vcf.gz
@@ -41,6 +42,8 @@ modules:
     vcflib: vcflib/1.0.1
     cnvkit: cnvkit/0.9.8
     scramble: Scramble/1.0.1
+    manta: manta/1.5.0
+    strelka: strelka/2.9.0
 bins:
     fastp: /data/yuk5/script/fastp
     vcfanno: /data/yuk5/pipeline/vcf_annotation/vcf_annotation.v1.wxs.py
