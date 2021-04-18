@@ -38,7 +38,6 @@ rule all:
         lambda wildcards: ["03.Germline.freebayes/{}/{}.flt.vcf.gz.anno/Merge.Anno.matrix.gz".format(sample, sample) for sample in sampledic],
         lambda wildcards: ["03.Germline.chrM/{}/{}.vcf".format(sample, sample) for sample in sampledic],
         lambda wildcards: ["03.Germline.strelka/{}/results/variants/variants.vcf.gz".format(sample) for sample in sampledic],
-        
         lambda wildcards: ["05.MEI_scramble/{}/{}.cluster.txt".format(sample, sample) for sample in sampledic],
 
 rule QC:
@@ -630,14 +629,14 @@ rule freebayes:
           -f {config[references][fasta]} \
           {input.bam} 2>> {log.err} |\
         bgzip > {output.vgz}
-        tabix -p vcf {output.vgz}
+        tabix -p vcf -f {output.vgz}
         """
 
 rule manta:
     input:
         bam="02.Alignment/Level3/{sample}/{sample}.BQSR.bam",
     output:
-        folder="04.SV.manta/{sample}",
+        folder=directory("04.SV.manta/{sample}"),
         result="04.SV.manta/{sample}/results/variants/candidateSmallIndels.vcf.gz",
     log:
         out = snakedir+"/logs/C11.manta/{sample}.o",
@@ -662,7 +661,7 @@ rule strelka:
         bam="02.Alignment/Level3/{sample}/{sample}.BQSR.bam",
         manta="04.SV.manta/{sample}/results/variants/candidateSmallIndels.vcf.gz",
     output:
-        folder="03.Germline.strelka/{sample}",
+        folder=directory("03.Germline.strelka/{sample}"),
         result="03.Germline.strelka/{sample}/results/variants/variants.vcf.gz",
     log:
         out = snakedir+"/logs/C12.strelka/{sample}.o",
@@ -673,7 +672,7 @@ rule strelka:
         extra = ' --gres=lscratch:20 ',
     shell:
         '''module load {config[modules][strelka]}
-        configManta.py \
+        configureStrelkaGermlineWorkflow.py \
             --bam {input.bam} \
             --referenceFasta {config[references][fasta]} \
             --runDir {output.folder} \
@@ -682,7 +681,6 @@ rule strelka:
             --exome > {log.out} 2> {log.err}
         {output.folder}/runWorkflow.py -m local -j 16 >> {log.out} 2>> {log.err}
         '''
-        
         
 rule scramble:
     input:
@@ -770,8 +768,8 @@ rule anno_freebayes:
         folder=directory("03.Germline.freebayes/{sample}/{sample}.flt.vcf.gz.anno"),
         result="03.Germline.freebayes/{sample}/{sample}.flt.vcf.gz.anno/Merge.Anno.matrix.gz",
     log:
-        out = "logs/D3.anno_freebayes/{sample}.o",
-        err = "logs/D3.anno_freebayes/{sample}.e",
+        out = snakedir+"/logs/D3.anno_freebayes/{sample}.o",
+        err = snakedir+"/logs/D3.anno_freebayes/{sample}.e",
     threads:  16
     resources:
         mem  = '64g',
@@ -779,13 +777,15 @@ rule anno_freebayes:
     shell:
         """
         module load {config[modules][vcflib]} {config[modules][samtools]}
+        tabix -p vcf -f {input}
         vcffilter \
           -f "QUAL > 20 & DP > 8 & QUAL / AO > 10 & SAF > 0 & SAR > 0 & RPR > 1 & RPL > 1" \
-            {input}|bgzip > {output.fltvcf}
+            {input} 2> {log.err}|bgzip > {output.fltvcf} 2>> {log.err}
+        tabix -p vcf -f {output.fltvcf}
         {config[bins][vcfanno]} \
             {output.fltvcf} \
             {output.folder} \
-            {threads} n > {log.out} 2> {log.err}
+            {threads} n > {log.out} 2>> {log.err}
         """
         
         

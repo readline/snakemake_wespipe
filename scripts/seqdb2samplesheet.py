@@ -18,6 +18,7 @@ def main():
         tmp.append(db.loc[i,'SM'])
         tmp.append('%s.%s'%(db.loc[i,'SM'], db.loc[i,'LB']))
         tmp.append('%s.%s'%(db.loc[i,'PU'], db.loc[i,'ID']))
+        tmp.append(db.loc[i,'PU'].split('_')[0])
         tmp.append(db.loc[i,'PU'].split('_')[1])
         tmp.append(db.loc[i,'PL'])
         tmp.append(db.loc[i,'Read1'])
