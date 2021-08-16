@@ -25,6 +25,7 @@ references:
     gatk_omni:   /data/yuk5/pipeline/wgs_germline/ref/gatk_bundle_hg38_v0/1000G_omni2.5.hg38.vcf.gz
     gatk_1000hc: /data/yuk5/pipeline/wgs_germline/ref/gatk_bundle_hg38_v0/1000G_phase1.snps.high_confidence.hg38.vcf.gz
     scramblefa: /data/yuk5/pipeline/wgs_germline/ref/SCRAMBLE/Homo_sapiens_assembly38.fasta
+    cnvkitpon: /data/yuk5/project/1.FPDMM/01.WES/PoN/current/cnvkit/pon.cnn
 modules:
     bwa: bwa/0.7.17
     samtools: samtools/1.9
@@ -44,11 +45,13 @@ modules:
     scramble: Scramble/1.0.1
     manta: manta/1.5.0
     strelka: strelka/2.9.0
+    singularity: singularity/3.7.3
 bins:
     fastp: /data/yuk5/script/fastp
     vcfanno: /data/yuk5/pipeline/vcf_annotation/vcf_annotation.v1.wxs.py
 simg:
     scramble: /usr/local/apps/Scramble/1.0.1-32893ef/libexec/scramble-1.0.1-32893ef.sif
+    cnvkit: /data/yuk5/app/CNVKIT/cnvkit_0.9.8.sif
 max-jobs-per-second: 1
 latency-wait: 120
 keep-going: true

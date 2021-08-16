@@ -39,6 +39,7 @@ rule all:
         lambda wildcards: ["03.Germline.chrM/{}/{}.vcf".format(sample, sample) for sample in sampledic],
         lambda wildcards: ["03.Germline.strelka/{}/results/variants/variants.vcf.gz".format(sample) for sample in sampledic],
         lambda wildcards: ["05.MEI_scramble/{}/{}.cluster.txt".format(sample, sample) for sample in sampledic],
+        lambda wildcards: ["06.CNV_cnvkit/{}/{}.BQSR.call.cns".format(sample, sample) for sample in sampledic],
 
 rule QC:
     input:
@@ -238,6 +239,7 @@ rule stat_bqsr:
     output:
         statdir=directory("02.Alignment/Level3/{sample}/stat"),
         flags="02.Alignment/Level3/{sample}/{sample}.BQSR.bam.flagstat",
+        stat3="02.Alignment/Level3/{sample}/stat/{sample}.stat3.xcov.log",
     log:
         out = snakedir+"/logs/B6.BQSRstat/{sample}.o",
         err = snakedir+"/logs/B6.BQSRstat/{sample}.e",
@@ -715,6 +717,41 @@ rule scramble:
             --mei-refs /app/cluster_analysis/resources/MEI_consensus_seqs.fa \
             --ref {config[references][scramblefa]} \
             --eval-meis >> {log.out} 2>>{log.err}
+        """
+
+rule cnvkit:
+    input:
+        bam="02.Alignment/Level3/{sample}/{sample}.BQSR.bam",
+        stat="02.Alignment/Level3/{sample}/stat/{sample}.stat3.xcov.log",
+    output:
+        dir=directory("06.CNV_cnvkit/{sample}"),
+        call="06.CNV_cnvkit/{sample}/{sample}.BQSR.call.cns",
+        cns="06.CNV_cnvkit/{sample}/{sample}.BQSR.cns",
+        seg="06.CNV_cnvkit/{sample}/{sample}.gistic.segments",
+    log:
+        out = snakedir+"/logs/D1.cnvkit/{sample}.o",
+        err = snakedir+"/logs/D1.cnvkit/{sample}.e",
+    threads:  16
+    resources:
+        mem  = '32g',
+        extra = ' --gres=lscratch:10 ',
+    shell:
+        """module load {config[modules][singularity]} 
+        mkdir -p mkdir -p {output.dir}
+        singularity exec -e \
+          -B /gs9,/data,/home,/lscratch \
+          {config[simg][cnvkit]} \
+          cnvkit.py batch \
+          {config[workdir]}/{input.bam} \
+          -m hybrid -r {config[references][cnvkitpon]} \
+          --output-dir {config[workdir]}/{output.dir} \
+          --scatter \
+          -p {threads} `{snakedir}/scripts/getgender.py {input.stat}` \
+          > {log.out} 2>{log.err}
+        singularity exec -e \
+          -B /gs9,/data,/home,/lscratch \
+          {config[simg][cnvkit]} \
+          cnvkit.py export seg {config[workdir]}/{output.cns} -o {config[workdir]}/{output.seg} >> {log.out} 2>>{log.err}
         """
         
 
