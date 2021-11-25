@@ -1,8 +1,8 @@
 samplesheet:
-    samplesheet.tsv
+    samplesheet.combine.tsv
 
 workdir:
-    /data/yuk5/project/1.FPDMM/01.WES/Pipe_210329
+    /data/yuk5/project/1.FPDMM/01.WES/Pipe_211122
 
 references:
     species:  homo_sapiens
@@ -45,7 +45,7 @@ modules:
     scramble: Scramble/1.0.1
     manta: manta/1.5.0
     strelka: strelka/2.9.0
-    singularity: singularity/3.7.3
+    singularity: singularity/3.7.4
 bins:
     fastp: /data/yuk5/script/fastp
     vcfanno: /data/yuk5/pipeline/vcf_annotation/vcf_annotation.v1.wxs.py
