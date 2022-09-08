@@ -319,8 +319,8 @@ rule CallableLoci:
         mem  = '16g',
         extra = ' --gres=lscratch:10 ',
     shell:
-        """module load GATK/3.8-1
-        GATK CallableLoci \
+        """
+        java -Xms8G -Xmx8G -XX:ParallelGCThreads=2 -jar {config[bins][gatk3]}  -T CallableLoci \
           -R {config[references][fasta]} \
           -L {config[references][flankitv]} \
           -I {input.bam} \
