@@ -2,7 +2,7 @@ samplesheet:
     samplesheet.combine.tsv
 
 workdir:
-    /data/yuk5/project/1.FPDMM/01.WES/Pipe_220601
+    /data/yuk5/project/1.FPDMM/01.WES/Pipe_230110
 
 references:
     species:  homo_sapiens
@@ -49,6 +49,7 @@ modules:
 bins:
     fastp: /data/yuk5/script/fastp
     vcfanno: /data/yuk5/pipeline/vcf_annotation/vcf_annotation.v1.wxs.py
+    gatk3: /data/yuk5/app/GATK_3.8-1/GenomeAnalysisTK.jar
 simg:
     scramble: /usr/local/apps/Scramble/1.0.1-32893ef/libexec/scramble-1.0.1-32893ef.sif
     cnvkit: /data/yuk5/app/CNVKIT/cnvkit_0.9.8.sif
