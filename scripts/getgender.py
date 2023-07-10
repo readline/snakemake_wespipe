@@ -5,7 +5,7 @@ def main():
     try:
         xcov = sys.argv[1]
     except:
-        sys.exit(sys.argv[0]+' [xcov file]')
+        sys.exit(sys.argv[0]+' [mosdepth.summary.txt file]')
     data = {}
     with open(xcov) as infile:
         while 1:
@@ -13,8 +13,8 @@ def main():
             if not line:
                 break
             c = line.strip().split('\t')
-            data[c[0]] = c[1]
-    if float(data['C.chrY']) / float(data['A2. Target region average depth']) > 0.25:
+            data[c[0]] = c[3]
+    if float(data['chrY_region']) / float(data['total_region']) > 0.25:
         return '-y'
     else:
         return ''
