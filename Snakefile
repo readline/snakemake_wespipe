@@ -6,6 +6,8 @@ from scripts.Load import samplesheet
 snakedir = os.getcwd()
 print(snakedir)
 configfile: 'config.yaml'
+for s in config['simg']:
+    config['simg'][s] = snakedir+'/'+config['simg'][s]
 print(config)
 sampledic, libdic, rundic = samplesheet(config['samplesheet'])
 workdir: config['workdir']
@@ -32,15 +34,18 @@ rule all:
         #"03.Germline.samtools/Merge.gsam.flt.snv.vcf.gz",
         #"03.Germline.samtools/Merge.gsam.flt.indel.vcf.gz",
         "03.Germline/Merge.flt.vqsr.vcf.anno/Merge.Anno.matrix.gz",
-        lambda wildcards: ["02.Alignment/Level3/{}/{}.BQSR.bam.flagstat".format(sample, sample) for sample in sampledic],
-        lambda wildcards: ["02.Alignment/Callable/{}/{}.bed".format(sample, sample) for sample in sampledic],
         lambda wildcards: ["03.Germline.Lofreq/{}/{}.lofreq.vcf.gz.anno/Merge.Anno.matrix.gz".format(sample, sample) for sample in sampledic],
         lambda wildcards: ["03.Germline.freebayes/{}/{}.flt.vcf.gz.anno/Merge.Anno.matrix.gz".format(sample, sample) for sample in sampledic],
-        lambda wildcards: ["03.Germline.chrM/{}/{}.vcf".format(sample, sample) for sample in sampledic],
         lambda wildcards: ["03.Germline.strelka/{}/results/variants/variants.vcf.gz".format(sample) for sample in sampledic],
         lambda wildcards: ["05.MEI_scramble/{}/{}.cluster.txt".format(sample, sample) for sample in sampledic],
         lambda wildcards: ["06.CNV_cnvkit/{}/{}.BQSR.call.cns".format(sample, sample) for sample in sampledic],
-
+        
+        # BamQC
+        lambda wildcards: [f"02.Alignment/Level3/{sample}/Metrics/Stats.{sample}.SM.txt" for sample in sampledic],
+        lambda wildcards: [f"02.Alignment/Level3/{sample}/Metrics/Stats.{sample}.LB_{lib}.txt" for sample in sampledic for lib in sampledic[sample]],
+        lambda wildcards: [f"02.Alignment/Level3/{sample}/Metrics/Stats.{sample}.RG_{run}.txt" for sample in sampledic for lib in sampledic[sample] for run in libdic[lib]],
+        lambda wildcards: [f"02.Alignment/Level3/{sample}/Mosdepth/{sample}.mosdepth.summary.txt" for sample in sampledic],
+        
 rule QC:
     input:
         reads1=lambda wildcards: rundic[wildcards.run]['Read1'],
@@ -58,14 +63,17 @@ rule QC:
         mem = '16g',
         extra = ' --gres=lscratch:10 '
     shell:
-        "/data/yuk5/script/fastp "
+        "module load singularity > {log.out} 2> {log.err}\n"
+        "{config[singularity]} {config[simg][fastp]} "
+        "fastp"
         " -i {input.reads1}" 
         " -I {input.reads2}" 
         " -o {output.reads1out}" 
         " -O {output.reads2out}" 
         " -h {output.htmlout}" 
         " -j {output.jsonout}" 
-        " -w {threads} > {log.out} 2> {log.err}"
+        " -w {threads}"
+        " >> {log.out} 2>> {log.err}"
 
 rule bwa_mem:
     input:
@@ -89,16 +97,20 @@ rule bwa_mem:
         mem = '16g',
         extra = ' --gres=lscratch:20 '
     shell:
-        "module load {config[modules][bwa]} {config[modules][samblaster]} {config[modules][sambamba]}\n"
+        "module load singularity > {log.out} 2> {log.err}\n"
+        "{config[singularity]} {config[simg][bwa]} "
         "bwa mem -t {threads} "
         " {params.bwa} "
         " {config[references][bwaidx]} "
-        " {input.reads} 2> {log.err} "
-        " |samblaster "
-        " {params.samblaster} "
-        " |sambamba view -S -f bam /dev/stdin "
-        " -t {threads} "
-        " |sambamba sort /dev/stdin "
+        " {input.reads} 2> {log.err} |"
+        "{config[singularity]} {config[simg][samblaster]} "
+        " samblaster "
+        " {params.samblaster} |"
+        "{config[singularity]} {config[simg][sambamba]} "
+        " sambamba view -S -f bam /dev/stdin "
+        " -t {threads} |"
+        "{config[singularity]} {config[simg][sambamba]} "
+        " sambamba sort /dev/stdin "
         " -t {threads} "
         " -o {output.bam} "
         " {params.sambambasort} >> {log.out} 2>> {log.err}"
@@ -117,15 +129,16 @@ rule markdup:
     threads:  16
     resources:
         mem = '64g',
-        jvm = '60g',
         extra = ' --gres=lscratch:40 ',
     run:
-        #inputs = " ".join(["INPUT={}".format(f) for f in {input}]),
         inputs = " ".join("INPUT={}".format(in_) for in_ in input.bam),
         shell(
             """
-            module load {config[modules][picard]} {config[modules][sambamba]}
-            java -Xmx{resources.jvm}  -Djava.io.tmpdir=/lscratch/$SLURM_JOB_ID  -jar $PICARD_JAR MarkDuplicates \
+            module load singularity > {log.out} 2> {log.err}
+            export _JAVA_OPTIONS="-Djava.io.tmpdir=/lscratch/$SLURM_JOBID -Xms60G -Xmx60G"
+            {config[singularity]} {config[simg][picard]} \
+            picard \
+                MarkDuplicates \
                 {inputs} \
                 OUTPUT={output.bam} \
                 METRICS_FILE={output.metrics} \
@@ -135,6 +148,7 @@ rule markdup:
                 ASSUME_SORT_ORDER=coordinate \
                 CLEAR_DT=false \
                 ADD_PG_TAG_TO_READS=false >> {log.out} 2>> {log.err}
+            {config[singularity]} {config[simg][sambamba]} \
             sambamba index -t 4 {output.bam} >> {log.out} 2>> {log.err}
             """)
 
@@ -156,7 +170,8 @@ rule merge_level3:
         if len(sampledic[wildcards.sample]) > 1:
             inputs = " ".join(input.bam),
             shell("""
-            module load {config[modules][sambamba]}
+            module load singularity > {log.out} 2> {log.err}
+            {config[singularity]} {config[simg][sambamba]} \
             sambamba merge \
                 -t {threads} \
                 {output.bam} \
@@ -164,8 +179,9 @@ rule merge_level3:
             """)
         else:
             shell("""
-            module load {config[modules][sambamba]}
+            module load singularity > {log.out} 2> {log.err}
             mv {input.bam[0]} {output.bam}
+            {config[singularity]} {config[simg][sambamba]} \
             sambamba index \
                 -t {threads} \
                 {output.bam} 2>> {log.err}
@@ -186,8 +202,10 @@ rule chrMbam:
         extra = ' --gres=lscratch:10 ',
     shell:
         """
-        module load samtools
+        module load singularity > {log.out} 2> {log.err}
+        {config[singularity]} {config[simg][samtools]} \
         samtools view -Sb -h {input.bam} chrM > {output.mbam} 2>> {log.err}
+        {config[singularity]} {config[simg][samtools]} \
         samtools index {output.mbam}
         """
         
@@ -208,7 +226,8 @@ rule bqsr:
         extra = ' --gres=lscratch:40 ',
     shell:
         """
-        module load {config[modules][gatk]}
+        module load singularity > {log.out} 2> {log.err}
+        {config[singularity]} {config[simg][gatk]} \
         gatk --java-options "-Xmx14g -Djava.io.tmpdir=/lscratch/$SLURM_JOB_ID" BaseRecalibrator \
             -R {config[references][fasta]} \
             -I {input.bam} \
@@ -218,6 +237,7 @@ rule bqsr:
             --known-sites {config[references][gatk_1000g]} \
             --known-sites {config[references][gatk_indel]} \
             --intervals   {config[references][flankbed]} >> {log.out} 2>> {log.err}
+        {config[singularity]} {config[simg][gatk]} \
         gatk --java-options "-Xmx14g -Djava.io.tmpdir=/lscratch/$SLURM_JOB_ID" ApplyBQSR \
             --add-output-sam-program-record \
             -R {config[references][fasta]} \
@@ -228,6 +248,92 @@ rule bqsr:
             -L {config[references][flankbed]} >> {log.out} 2>> {log.err}
         """            
 
+rule BAM_TO_STAT_RG:
+    input:
+        bam="02.Alignment/Level3/{sample}/{sample}.BQSR.bam",
+    output:
+        stats="02.Alignment/Level3/{sample}/Metrics/Stats.{sample}.RG_{run}.txt",
+    log:
+        out = snakedir+"/logs/B6.CRAM_TO_STAT_RG/{sample}.{run}.o",
+        err = snakedir+"/logs/B6.CRAM_TO_STAT_RG/{sample}.{run}.e",
+    threads:  12
+    resources:
+        mem  = '24g',
+        extra = ' --gres=lscratch:100 ',
+    shell:
+        "module load singularity > {log.out} 2> {log.err}\n"
+        "{config[singularity]} {config[simg][samtools]} "
+        "samtools"
+        "    view"
+        "    -@ 8"
+        "    -b"
+        "    -T {config[references][fasta]}"
+        "    -r {wildcards.run}"
+        "    {input.bam} | "
+        "{config[singularity]} {config[simg][samtools]} "
+        "samtools"
+        "    stats"
+        "    -@ 4"
+        "    --reference {config[references][fasta]}"
+        "    -"
+        "    > {output.stats} 2>> {log.err}\n"
+        
+        
+rule BAM_TO_STAT_LB:
+    input:
+        bam="02.Alignment/Level3/{sample}/{sample}.BQSR.bam",
+    output:
+        stats="02.Alignment/Level3/{sample}/Metrics/Stats.{sample}.LB_{lib}.txt",
+    log:
+        out = snakedir+"/logs/B6.CRAM_TO_STAT_LB/{sample}.{lib}.o",
+        err = snakedir+"/logs/B6.CRAM_TO_STAT_LB/{sample}.{lib}.e",
+    threads:  12
+    resources:
+        mem  = '24g',
+        extra = ' --gres=lscratch:100 ',
+    run:
+        ids = ' '.join([' -r %s'%rg for rg in libdic[wildcards.lib]])
+        shell(
+            "module load singularity > {log.out} 2> {log.err}\n"
+            "{config[singularity]} {config[simg][samtools]} "
+            "samtools"
+            "    view"
+            "    -@ 8"
+            "    -b"
+            "    -T {config[references][fasta]}"
+            "    {ids}"
+            "    {input.bam} | "
+            "{config[singularity]} {config[simg][samtools]} "
+            "samtools"
+            "    stats"
+            "    -@ 4"
+            "    --reference {config[references][fasta]}"
+            "    -"
+            "    > {output.stats} 2>> {log.err}\n"
+        )
+        
+        
+rule BAM_TO_STAT_SM:
+    input:
+        bam="02.Alignment/Level3/{sample}/{sample}.BQSR.bam",
+    output:
+        stats="02.Alignment/Level3/{sample}/Metrics/Stats.{sample}.SM.txt",
+    log:
+        out = snakedir+"/logs/B6.CRAM_TO_STAT_SM/{sample}.o",
+        err = snakedir+"/logs/B6.CRAM_TO_STAT_SM/{sample}.e",
+    threads:  12
+    resources:
+        mem  = '24g',
+        extra = ' --gres=lscratch:100 ',
+    shell:
+        "module load singularity > {log.out} 2> {log.err}\n"
+        "{config[singularity]} {config[simg][samtools]} "
+        "samtools"
+        "    stats"
+        "    -@ {threads}"
+        "    --reference {config[references][fasta]}"
+        "    {input.bam}"
+        "    > {output.stats} 2>> {log.err}\n"
         
 rule stat_bqsr:
     input:
@@ -249,9 +355,12 @@ rule stat_bqsr:
         extra = ' --gres=lscratch:10 ',
     shell:
         """
-        module load {config[modules][picard]} {config[modules][sambamba]} {config[modules][samtools]}
+        module load singularity > {log.out} 2> {log.err}
         mkdir -p {output.statdir}
-        java -Xmx8000m -Djava.io.tmpdir=/lscratch/$SLURM_JOB_ID -jar $PICARD_JAR CollectMultipleMetrics \
+        export _JAVA_OPTIONS="-Djava.io.tmpdir=/lscratch/$SLURM_JOBID -Xms14G -Xmx14G"
+        {config[singularity]} {config[simg][picard]} \
+        picard \
+            CollectMultipleMetrics \
             INPUT={input.bam} \
             REFERENCE_SEQUENCE={config[references][fasta]} \
             OUTPUT={params.stat1} \
@@ -265,7 +374,9 @@ rule stat_bqsr:
             METRIC_ACCUMULATION_LEVEL="null" \
             METRIC_ACCUMULATION_LEVEL="SAMPLE" \
             METRIC_ACCUMULATION_LEVEL="LIBRARY" >> {log.out} 2>> {log.err}
-        java -Xmx8000m -Djava.io.tmpdir=/lscratch/$SLURM_JOB_ID -jar $PICARD_JAR CollectMultipleMetrics \
+        {config[singularity]} {config[simg][picard]} \
+        picard \
+            CollectMultipleMetrics \
             INPUT={input.bam} \
             REFERENCE_SEQUENCE={config[references][fasta]} \
             OUTPUT={params.stat2} \
@@ -275,8 +386,9 @@ rule stat_bqsr:
             PROGRAM="CollectGcBiasMetrics" \
             METRIC_ACCUMULATION_LEVEL="null" \
             METRIC_ACCUMULATION_LEVEL="READ_GROUP"  >> {log.out} 2>> {log.err}
+        {config[singularity]} {config[simg][sambamba]} \
         sambamba flagstat -t {threads} {input.bam} > {output.flags}
-        module load {config[modules][python37]} 
+        {config[singularity]} {config[simg][python3]} python\
         {snakedir}/scripts/ExomeBamCovStat.py hg38idt \
             {input.bam} {params.stat3} >> {log.out} 2>> {log.err}
         """        
@@ -296,42 +408,59 @@ rule lofreqindelbam:
         extra = ' --gres=lscratch:10 ',
     shell:
         """
-        module load {config[modules][lofreq]} {config[modules][sambamba]}
+        module load singularity > {log.out} 2> {log.err}
+        {config[singularity]} {config[simg][lofreq]} \
         lofreq indelqual \
           -f {config[references][fasta]} \
           --dindel \
           -o {output.bam} \
           {input.bam} >> {log.out} 2>> {log.err}
+        {config[singularity]} {config[simg][sambamba]} \
         sambamba index -t {threads} {output.bam}  >> {log.out} 2>> {log.err}
         """        
 
-rule CallableLoci:
+        
+rule BAM_TO_MOSDEPTH:
     input:
         bam="02.Alignment/Level3/{sample}/{sample}.BQSR.bam",
     output:
-        bed="02.Alignment/Callable/{sample}/{sample}.bed",
-        summary="02.Alignment/Callable/{sample}/{sample}.summary",
+        stats="02.Alignment/Level3/{sample}/Mosdepth/{sample}.mosdepth.summary.txt",
+    params:
+        prefix="02.Alignment/Level3/{sample}/Mosdepth/{sample}",
+        prefixwxs="02.Alignment/Level3/{sample}/Mosdepth/{sample}.wxs",
     log:
-        out = snakedir+"/logs/B8.Callable/{sample}.o",
-        err = snakedir+"/logs/B8.Callable/{sample}.e",
+        out = snakedir+"/logs/B8.CRAM_TO_MOSDEPTH/{sample}.o",
+        err = snakedir+"/logs/B8.CRAM_TO_MOSDEPTH/{sample}.e",
     threads:  4
     resources:
         mem  = '16g',
-        extra = ' --gres=lscratch:10 ',
+        extra = ' --gres=lscratch:100 ',
     shell:
-        """
-        java -Xms8G -Xmx8G -XX:ParallelGCThreads=2 -jar {config[bins][gatk3]}  -T CallableLoci \
-          -R {config[references][fasta]} \
-          -L {config[references][flankitv]} \
-          -I {input.bam} \
-          --maxDepth 1000 \
-          --minBaseQuality 10 \
-          --minMappingQuality 10 \
-          --minDepth 10 \
-          --minDepthForLowMAPQ 20 \
-          --summary {output.summary} \
-          -o {output.bed}  >> {log.out} 2>> {log.err}
-          """
+        "module load singularity > {log.out} 2> {log.err}\n"
+        "{config[singularity]} {config[simg][mosdepth]} "
+        "mosdepth"
+        "    --threads {threads}"
+        "    --by {config[references][wesbed]}"
+        "    --no-per-base"
+        "    --fasta {config[references][fasta]}"
+        "    {params.prefixwxs}"
+        "    {input.bam}"
+        " >> {log.out} 2>> {log.err}\n"
+        "export MOSDEPTH_Q0=NO_COVERAGE \n"
+        "export MOSDEPTH_Q1=LOW_COVERAGE \n"
+        "export MOSDEPTH_Q2=CALLABLE \n"
+        "export MOSDEPTH_Q3=HIGH_COVERAGE \n"
+        "{config[singularity]} {config[simg][mosdepth]} "
+        "mosdepth"
+        "    --threads {threads}"
+        "    --by {config[references][flankbed]}"
+        "    --no-per-base"
+        "    --fasta {config[references][fasta]}"
+        "    --quantize 0:1:5:150:"
+        "    {params.prefix}"
+        "    {input.bam}"
+        " >> {log.out} 2>> {log.err}\n"
+        
 
 rule HaplotypeCaller:
     input:
@@ -350,7 +479,8 @@ rule HaplotypeCaller:
         extra = ' --gres=lscratch:40 ',
     shell:
         """
-        module load {config[modules][gatk]} {config[modules][picard]}
+        module load singularity > {log.out} 2> {log.err}
+        {config[singularity]} {config[simg][gatk]} \
         gatk --java-options "-Xmx8000m -Djava.io.tmpdir=/lscratch/$SLURM_JOB_ID" HaplotypeCaller \
             -R {config[references][fasta]} \
             -O {output.gvcf} \
@@ -360,6 +490,7 @@ rule HaplotypeCaller:
             --read-filter OverclippedReadFilter \
             --dbsnp {config[references][gatk_dbsnp]} \
             -L {config[references][flankbed]} >> {log.out} 2>> {log.err}
+        {config[singularity]} {config[simg][gatk]} \
         gatk --java-options "-Xmx8000m -Djava.io.tmpdir=/lscratch/$SLURM_JOB_ID" ValidateVariants \
             -V {output.gvcf} \
             -R {config[references][fasta]} \
@@ -368,7 +499,9 @@ rule HaplotypeCaller:
             --dbsnp {config[references][gatk_dbsnp]} \
             -L {config[references][flankbed]} >> {log.out} 2>> {log.err}
         mkdir -p {output.statdir}
-        java -Xms2000m -Xmx8000m -Djava.io.tmpdir=/lscratch/$SLURM_JOB_ID -jar $PICARD_JAR \
+        export _JAVA_OPTIONS="-Djava.io.tmpdir=/lscratch/$SLURM_JOBID -Xms14G -Xmx14G"
+        {config[singularity]} {config[simg][picard]} \
+        picard \
             CollectVariantCallingMetrics \
             INPUT={output.gvcf} \
             OUTPUT={params.stat} \
@@ -399,7 +532,8 @@ rule GenomicsDBImport:
         inputs = " ".join("-V {}".format(f) for f in input.gvcf)
         shell(
         """
-        module load {config[modules][gatk]}
+        module load singularity > {log.out} 2> {log.err}
+        {config[singularity]} {config[simg][gatk]} \
         gatk --java-options "-Xmx4g -Xms4g -Djava.io.tmpdir=/lscratch/$SLURM_JOB_ID" \
             GenomicsDBImport \
             {inputs} \
@@ -407,6 +541,7 @@ rule GenomicsDBImport:
             --genomicsdb-workspace-path /lscratch/$SLURM_JOB_ID/gdb.itv_{wildcards.itv} \
             --merge-input-intervals \
             --consolidate >> {log.out} 2>> {log.err}
+        {config[singularity]} {config[simg][gatk]} \
         gatk --java-options "-Xmx5g -Xms5g -Djava.io.tmpdir=/lscratch/$SLURM_JOB_ID" \
             GenotypeGVCFs \
             -R {config[references][fasta]} \
@@ -418,12 +553,14 @@ rule GenomicsDBImport:
             -V gendb:///lscratch/$SLURM_JOB_ID/gdb.itv_{wildcards.itv} \
             -L {params.bed}   >> {log.out} 2>> {log.err}
             
+        {config[singularity]} {config[simg][gatk]} \
         gatk --java-options "-Xmx16g -Xms16g -Djava.io.tmpdir=/lscratch/$SLURM_JOB_ID" \
             VariantFiltration \
             --filter-expression "ExcessHet>54.69" \
             --filter-name ExcessHet \
             -V {output.itvvcf} \
             -O {output.itvmf} >> {log.out} 2>> {log.err}
+        {config[singularity]} {config[simg][gatk]} \
         gatk --java-options "-Xmx16g -Xms16g -Djava.io.tmpdir=/lscratch/$SLURM_JOB_ID" \
             MakeSitesOnlyVcf \
              -I {output.itvmf} \
@@ -462,22 +599,26 @@ rule genotyping:
         soinputs = " ".join("--input {}".format(i) for i in input.soitvs)
         shell(
         """
-        module load {config[modules][gatk]} {config[modules][samtools]}
-        
+        module load singularity > {log.out} 2> {log.err}
+        {config[singularity]} {config[simg][gatk]} \
         gatk --java-options "-Xmx16g -Xms16g -Djava.io.tmpdir=/lscratch/$SLURM_JOB_ID" \
           GatherVcfsCloud \
           --ignore-safety-checks \
           --gather-type BLOCK \
           --output {output.sovcf} \
           {soinputs}  >> {log.out} 2>> {log.err}
+        {config[singularity]} {config[simg][gatk]} \
         gatk --java-options "-Xmx16g -Xms16g -Djava.io.tmpdir=/lscratch/$SLURM_JOB_ID" \
           GatherVcfsCloud \
           --ignore-safety-checks \
           --gather-type BLOCK \
           --output {output.mfvcf} \
           {mfinputs}  >> {log.out} 2>> {log.err}
+        {config[singularity]} {config[simg][samtools]} \
         tabix -p vcf {output.sovcf}
+        {config[singularity]} {config[simg][samtools]} \
         tabix -p vcf {output.mfvcf}
+        {config[singularity]} {config[simg][gatk]} \
         gatk --java-options -Xms24g \
           VariantRecalibrator \
           -V {output.sovcf} \
@@ -493,6 +634,7 @@ rule genotyping:
           --resource:mills,known=false,training=true,truth=true,prior=12 {config[references][gatk_1000g]} \
           --resource:axiomPoly,known=false,training=true,truth=false,prior=10 {config[references][gatk_axiom]} \
           --resource:dbsnp,known=true,training=false,truth=false,prior=2 {config[references][gatk_dbsnp]} >> {log.out} 2>> {log.err}
+        {config[singularity]} {config[simg][gatk]} \
         gatk --java-options -Xms50g \
           VariantRecalibrator \
           -V {output.sovcf} \
@@ -511,6 +653,7 @@ rule genotyping:
           -resource:omni,known=false,training=true,truth=true,prior=12 {config[references][gatk_omni]} \
           -resource:1000G,known=false,training=true,truth=false,prior=10 {config[references][gatk_1000hc]} \
           -resource:dbsnp,known=true,training=false,truth=false,prior=7 {config[references][gatk_dbsnp]} >> {log.out} 2>> {log.err}
+        {config[singularity]} {config[simg][gatk]} \
         gatk --java-options -Xms80g \
           VariantRecalibrator \
           -V {output.sovcf} \
@@ -528,6 +671,7 @@ rule genotyping:
           -resource:omni,known=false,training=true,truth=true,prior=12 {config[references][gatk_omni]} \
           -resource:1000G,known=false,training=true,truth=false,prior=10 {config[references][gatk_1000hc]} \
           -resource:dbsnp,known=true,training=false,truth=false,prior=7 {config[references][gatk_dbsnp]} >> {log.out} 2>> {log.err}
+        {config[singularity]} {config[simg][gatk]} \
         gatk --java-options -Xms5g \
           ApplyVQSR \
           -O {output.mirv} \
@@ -538,6 +682,7 @@ rule genotyping:
           --truth-sensitivity-filter-level 95.0 \
           --create-output-variant-index true \
           -mode INDEL >> {log.out} 2>> {log.err}
+        {config[singularity]} {config[simg][gatk]} \
         gatk --java-options -Xms5g \
           ApplyVQSR \
           -O {output.vqsr} \
@@ -569,15 +714,17 @@ rule lofreq:
         extra = ' --gres=lscratch:10 ',
     shell:
         """
-        module load {config[modules][lofreq]}
+        module load singularity > {log.out} 2> {log.err}
+        {config[singularity]} {config[simg][lofreq]} \
         lofreq call-parallel \
           --pp-threads {threads} \
           -f {config[references][fasta]} \
           -o {params.vcf} \
           --call-indels \
           {input.bam}  >> {log.out} 2>> {log.err}
-        module load {config[modules][samtools]}
+        {config[singularity]} {config[simg][samtools]} \
         bgzip {params.vcf}
+        {config[singularity]} {config[simg][samtools]} \
         tabix -p vcf {output.vgz}  >> {log.out} 2>> {log.err}
         """
         
@@ -623,14 +770,17 @@ rule freebayes:
         extra = ' --gres=lscratch:10 ',
     shell:
         """
-        module load {config[modules][freebayes]} {config[modules][samtools]}
+        module load singularity > {log.out} 2> {log.err}
+        {config[singularity]} {config[simg][freebayes]} \
         freebayes-parallel \
-          <(fasta_generate_regions.py {config[references][fasta]}.fai \
+          <({config[singularity]} {config[simg][freebayes]} fasta_generate_regions.py {config[references][fasta]}.fai \
           100000) \
           {threads} \
           -f {config[references][fasta]} \
           {input.bam} 2>> {log.err} |\
+        {config[singularity]} {config[simg][samtools]} \
         bgzip > {output.vgz}
+        {config[singularity]} {config[simg][samtools]} \
         tabix -p vcf -f {output.vgz}
         """
 
@@ -648,12 +798,14 @@ rule manta:
         mem  = '32g',
         extra = ' --gres=lscratch:50 ',
     shell:
-        '''module load {config[modules][manta]}
+        '''module load singularity > {log.out} 2> {log.err}
+        {config[singularity]} {config[simg][manta]} \
         configManta.py \
             --bam {input.bam} \
             --referenceFasta {config[references][fasta]} \
             --runDir {output.folder} \
             --callRegions {config[references][flankbedgz]} > {log.out} 2> {log.err}
+        {config[singularity]} {config[simg][manta]} \
         {output.folder}/runWorkflow.py -m local -j 16 >> {log.out} 2>> {log.err}
         '''
         
@@ -673,7 +825,8 @@ rule strelka:
         mem  = '32g',
         extra = ' --gres=lscratch:20 ',
     shell:
-        '''module load {config[modules][strelka]}
+        '''module load singularity > {log.out} 2> {log.err}
+        {config[singularity]} {config[simg][strelka]} \
         configureStrelkaGermlineWorkflow.py \
             --bam {input.bam} \
             --referenceFasta {config[references][fasta]} \
@@ -681,6 +834,7 @@ rule strelka:
             --callRegions {config[references][flankbedgz]} \
             --indelCandidates {input.manta} \
             --exome > {log.out} 2> {log.err}
+        {config[singularity]} {config[simg][strelka]} \
         {output.folder}/runWorkflow.py -m local -j 16 >> {log.out} 2>> {log.err}
         '''
         
@@ -699,22 +853,23 @@ rule scramble:
         mem  = '32g',
         extra = ' --gres=lscratch:10 ',
     shell:
-        """module load {config[modules][scramble]} 
-        singularity exec -e \
-          -B /gpfs,/gs9,/data,/home \
-          {config[simg][scramble]} \
+        """module load singularity > {log.out} 2> {log.err}
+        cd /lscratch/$SLURM_JOB_ID
+        wget https://github.com/GeneDx/scramble/archive/refs/tags/1.0.2.tar.gz
+        tar zxvf 1.0.2.tar.gz
+        export PATH=/lscratch/$SLURM_JOB_ID/scramble-1.0.2/cluster_analysis/bin:$PATH >> {log.out} 2>>{log.err}
+        cd {config[workdir]}
+        {config[singularity]} {config[simg][scramble]} \
           cluster_identifier \
           {input.bam} \
           > {output.clst} 2>{log.err}
-        singularity exec -e \
-          -B /gpfs,/gs9,/data,/home \
-          {config[simg][scramble]} \
+        {config[singularity]} {config[simg][scramble]} \
           Rscript \
-            --vanilla /data/yuk5/pipeline/wgs_germline/ref/SCRAMBLE/v1.0.1_fixedbin/SCRAMble.R \
+            --vanilla /lscratch/$SLURM_JOB_ID/scramble-1.0.2/cluster_analysis/bin/SCRAMble.R \
             --out-name {config[workdir]}/{params.mei} \
             --cluster-file {config[workdir]}/{output.clst} \
-            --install-dir /data/yuk5/pipeline/wgs_germline/ref/SCRAMBLE/v1.0.1_fixedbin \
-            --mei-refs /app/cluster_analysis/resources/MEI_consensus_seqs.fa \
+            --install-dir /lscratch/$SLURM_JOB_ID/scramble-1.0.2/cluster_analysis/bin \
+            --mei-refs /lscratch/$SLURM_JOB_ID/scramble-1.0.2/cluster_analysis/resources/MEI_consensus_seqs.fa \
             --ref {config[references][scramblefa]} \
             --eval-meis >> {log.out} 2>>{log.err}
         """
@@ -722,7 +877,7 @@ rule scramble:
 rule cnvkit:
     input:
         bam="02.Alignment/Level3/{sample}/{sample}.BQSR.bam",
-        stat="02.Alignment/Level3/{sample}/stat/{sample}.stat3.xcov.log",
+        mosdepth="02.Alignment/Level3/{sample}/Mosdepth/{sample}.mosdepth.summary.txt",
     output:
         dir=directory("06.CNV_cnvkit/{sample}"),
         call="06.CNV_cnvkit/{sample}/{sample}.BQSR.call.cns",
@@ -736,21 +891,17 @@ rule cnvkit:
         mem  = '32g',
         extra = ' --gres=lscratch:10 ',
     shell:
-        """module load {config[modules][singularity]} 
-        mkdir -p mkdir -p {output.dir}
-        singularity exec -e \
-          -B /gs9,/data,/home,/lscratch \
-          {config[simg][cnvkit]} \
+        """module load singularity > {log.out} 2> {log.err}
+        mkdir -p {output.dir}
+        {config[singularity]} {config[simg][cnvkit]} \
           cnvkit.py batch \
           {config[workdir]}/{input.bam} \
           -m hybrid -r {config[references][cnvkitpon]} \
           --output-dir {config[workdir]}/{output.dir} \
           --scatter \
-          -p {threads} `{snakedir}/scripts/getgender.py {input.stat}` \
+          -p {threads} `{snakedir}/scripts/getgender.py {input.mosdepth}` \
           > {log.out} 2>{log.err}
-        singularity exec -e \
-          -B /gs9,/data,/home,/lscratch \
-          {config[simg][cnvkit]} \
+        {config[singularity]} {config[simg][cnvkit]} \
           cnvkit.py export seg {config[workdir]}/{output.cns} -o {config[workdir]}/{output.seg} >> {log.out} 2>>{log.err}
         """
         
@@ -770,7 +921,8 @@ rule anno_gatk:
         extra = ' --gres=lscratch:10 ',
     shell:
         """
-        {config[bins][vcfanno]} \
+        module load snpEff python > {log.out} 2> {log.err}
+        {snakedir}/{config[bins][vcfanno]} \
             {input} \
             {output.folder} \
             {threads} n > {log.out} 2> {log.err}
@@ -791,7 +943,8 @@ rule anno_lofreq:
         extra = ' --gres=lscratch:10 ',
     shell:
         """
-        {config[bins][vcfanno]} \
+        module load snpEff python > {log.out} 2> {log.err}
+        {snakedir}/{config[bins][vcfanno]} \
             {input} \
             {output.folder} \
             {threads} n > {log.out} 2> {log.err}
@@ -813,13 +966,17 @@ rule anno_freebayes:
         extra = ' --gres=lscratch:10 ',
     shell:
         """
-        module load {config[modules][vcflib]} {config[modules][samtools]}
+        module load singularity > {log.out} 2> {log.err}
+        {config[singularity]} {config[simg][samtools]} \
         tabix -p vcf -f {input}
+        {config[singularity]} {config[simg][vcflib]} \
         vcffilter \
           -f "QUAL > 20 & DP > 8 & QUAL / AO > 10 & SAF > 0 & SAR > 0 & RPR > 1 & RPL > 1" \
             {input} 2> {log.err}|bgzip > {output.fltvcf} 2>> {log.err}
+        {config[singularity]} {config[simg][samtools]} \
         tabix -p vcf -f {output.fltvcf}
-        {config[bins][vcfanno]} \
+        module load snpEff python >> {log.out} 2>> {log.err}
+        {snakedir}/{config[bins][vcfanno]} \
             {output.fltvcf} \
             {output.folder} \
             {threads} n > {log.out} 2>> {log.err}
