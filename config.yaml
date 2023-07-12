@@ -38,7 +38,6 @@ simg:
     cnvkit:  singularity/cnvkit_0.9.8.simg
     fastp:  singularity/fastp_0.20.1.simg
     freebayes:  singularity/freebayes_1.3.5.simg
-    gatk:  singularity/gatk_3.8.simg
     gatk:  singularity/gatk_4.2.0.0.simg
     picard: singularity/picard_2.18.27.simg
     lofreq:  singularity/lofreq_2.1.5.simg
