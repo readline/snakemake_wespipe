@@ -4,3 +4,5 @@
 00.RawData/
 .snakemake/
 test
+singularity/*.simg
+slurm-*
